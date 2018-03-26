@@ -1,0 +1,928 @@
+<html>
+    
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=gbk" />
+        <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+		<link rel="stylesheet" type="text/css" href="css/scxnTabDiv.css"/>
+        <link rel="stylesheet" type="text/css" href="css/baidu.css" />
+        <title>
+            地图
+        </title>
+    </head>
+    
+    <body>
+		<!--input type="BUTTON" name="FullScreen" value="打印" onclick="printMap()"></input-->
+		<!--startprint-->
+            <div id="allmap" onselectstart="return false;" oncontextmenu="closePolyLine();enableDragging();" style="height: 100%;position:relative;">
+            </div>
+		<!--endprint-->
+			<div id="ss" />
+            <div id="map_hidetools" style="height:100%;top:50%;" onclick="showToolPanel()">
+				>
+				</div>
+            </div>
+            <div id="map_tools">
+                <input id="x">
+                经度
+                </button>
+                <input id="y">
+                纬度
+                </button>
+                <button onclick="panTo(document.getElementById('x').value,document.getElementById('y').value)">
+                    定位
+                </button>
+                <div id="map_points">
+                    <div id="point_hidebutton">
+                    </div>
+                    <div id="point_checkbox">
+                    </div>
+                    <div id="point_selection">
+                    </div>
+					
+						<input id="bookMarkName" style="width:50px"></input>
+						<input type="BUTTON" name="FullScreen" value="添加书签" onclick="addBookMark(document.getElementById('bookMarkName').value)"></input>
+						<br/>
+						<select id="bookmarkselect">
+						</select>
+						<button onclick="gotoBookMark()">
+							定位书签
+						</button>
+                </div>
+                <div id="loading_div" style="position:absolute;width:100%;height:100%;top:0;background-color:white;z-index:999;text-align:center;padding-top:300px;">
+                    加载中...
+                </div>
+                <div id="info_div" style="width='280px';height='200px;'">
+                </div>
+                <div id="img_div" style="display: none; position: absolute; width: 100px; height: 100px;">
+                </div>
+                <button onclick="openDis()">
+                    测距
+                </button>
+				<input type="BUTTON" name="FullScreen" value="全屏显示" onclick="window.open(document.location, 'big', 'fullscreen=yes')"></input>
+				<input type="BUTTON" name="FullScreen" value="全图" onclick="initCenterAndZoom()"></input>
+				<input type="BUTTON" name="FullScreen" value="拉框放大" onclick="openDrag()"></input>
+				<input type="BUTTON" name="FullScreen" value="平移" onclick="panning()"></input>
+				<input type="BUTTON" name="FullScreen" value="切片" onclick="map.setMapType(BMAP_NORMAL_MAP)"></input>
+				<input type="BUTTON" name="FullScreen" value="影像" onclick="map.setMapType(BMAP_HYBRID_MAP)"></input>
+				<input type="BUTTON" name="FullScreen" value="简/详" onclick="changeLabelContent()"></input>
+				<input type="BUTTON" name="FullScreen" value="画线" onclick="openPolyLine()"></input>
+				<input type="BUTTON" name="FullScreen" value="清除画线" onclick="clearPolyLine()"></input>
+				<input type="BUTTON" name="FullScreen" value="固定" onclick="disableDragging()"></input>
+				<input type="BUTTON" name="FullScreen" value="取消固定" onclick="enableDragging()"></input>
+				<input type="BUTTON" name="FullScreen" value="更新" onclick="testUpdate()"></input>
+				<input type="BUTTON" name="FullScreen" value="打印" onclick="printMap()"></input>
+    </body>
+
+</html>
+<script type="text/javascript" src="js/BaiduApi_2.0.js">
+</script>
+<script type="text/javascript" src="js/AreaRestriction_min.js">
+</script>
+<script type="text/javascript" src="js/TextIconOverlay_min.js">
+</script>
+<script type="text/javascript" src="js/scxnLabel.js">
+</script>
+<script type="text/javascript" src="js/config.js">
+</script>
+<script type="text/javascript" src="js/DistanceTool_min.js">
+</script>
+<script type="text/javascript" src="js/data_Map.js">
+</script>
+<script type="text/javascript" src="js/RectangleZoom_min.js">
+</script>
+<script type="text/javascript" src="js/ScxnTools.js">
+</script>
+<script type="text/javascript" src="js/scxnTabDiv.js">
+</script>
+<script type="text/javascript">
+var baiduX = new Array(0,0,1,3,6,12,24,49,98,197,395,790,1581,3163,6327,12654,25308,50617);
+var baiduY = new Array(0,0,0,1,2,4,9,18,36,73,147,294,589,1178,2356,4712,9425,18851);
+var googleX = new Array(0,1,3,7,13,26,52,106,212,425,851,1702,3405,6811,13623,27246,54492,107917);
+var googleY = new Array(0,0,1,2,5,12,23,47,95,190,380,761,1522,3045,6091,12183,24366,47261);
+
+function toGoogleX(x,z){
+	var b = baiduX[z-1];//395
+	var g = googleX[z-1];//11:843,12:1685
+	var gx = g + (x-b);//   --- 1587+
+	//谷歌瓦片行编号=[谷歌参照瓦片行编号+(百度行编号 – 百度参照瓦片行编号)]
+	return gx;
+}
+function toGoogleY(y,z){
+	var b = baiduY[z-1];//147
+	var g = googleY[z-1];//10:
+	var gy = g - (y-b);//
+	//谷歌瓦片列编号=[谷歌参照瓦片列编号- (百度列编号 – 百度参照瓦片列编号)] //向上，列为递减
+	//alert(y);
+	return gy;
+}
+    //var addMarkerFlag = false;
+    //var mouseCursor;
+    var dataMap = new HashMap();
+    var labelMap = new HashMap();
+    var bkmkMap = new HashMap();		//bookMark书签map
+	var lineArray = new Array();		//线集合
+	var currLine = "";					//当前画线
+	var polyflag = false;				//画线开关
+	var brTag = document.createElement("br");
+	var currShowLabel = null;
+	var isPanelShow = !isPanelShow();
+	var isComplexShow = isComplexShow();
+	var defaultCursor = null;
+	var isFixedMap = false;
+   
+    //初始化地图
+    var map = new BMap.Map('allmap', {
+        mapType: getDefaultMapType()
+    });
+	var overlayTileLayer = new BMap.TileLayer({isTransparentPng: true});
+	overlayTileLayer.getTilesUrl = function(tileCoord, zoom) {
+        var x = tileCoord.x;
+        var y = tileCoord.y;
+		//var gx = toGoogleX(x,zoom);//建议注释
+		//var gy = toGoogleY(y,zoom);//建议注释
+        //var url = 'overlay/' + (zoom-1) + "/" + gx + "/" + gy + ".png"; //根据当前坐标，选取合适的瓦片图,不建议此方法,会导致拖动的时候卡顿,建议直接使用百度瓦片
+        var url = 'overlay/' + (zoom-1) + "/" + x + "/" + y + ".png"; //直接使用本地瓦片
+        //document.getElementById("info_div").innerHTML+=url+"<br/>";
+        return url;
+	}
+	map.addTileLayer(overlayTileLayer);
+	//添加缩放控件
+	if(isAddNavigation()){
+		map.addControl(new BMap.NavigationControl({
+			anchor: BMAP_ANCHOR_TOP_RIGHT,
+			type: BMAP_NAVIGATION_CONTROL_LARGE
+		}));
+	}
+	//添加点击事件
+	map.addEventListener('click', function(e) {
+		//画线
+		//document.getElementById("info_div").innerHTML += "</br>"+e.point.lng+","+e.point.lat;
+		if(polyflag){
+			if(currLine!=""){
+				currLine+= ";";
+				map.removeOverlay(lineArray.pop());
+			}
+			currLine+=e.point.lng+","+e.point.lat;
+			lineArray.push(addPolyline(currLine,getPolyLineColor(),0.8,getPolyLineWidth()));
+		}
+	});
+	//开启画线
+	function openPolyLine(){
+		polyflag = true;
+		currLine = "";
+		map.setDefaultCursor("default");
+	}
+	//关闭画线
+	function closePolyLine(){
+		polyflag = false;
+		map.setDefaultCursor(defaultCursor);
+	}
+	//清除画线
+	function clearPolyLine(){
+		while(lineArray.length>0){
+			var l = lineArray.shift();
+			map.removeOverlay(l);
+		}
+		closePolyLine();
+	}
+	initCenterAndZoom();			//初始化中心点
+	if(isEnableScrollWheelZoom()){
+		map.enableScrollWheelZoom();		//启用滚动缩放
+	}
+	if(!isEnableDoubleClickZoom()){
+		map.disableDoubleClickZoom();		//禁用双击放大
+	}
+	map.enableContinuousZoom();
+	//map.addControl(new BMap.ScaleControl());//
+	if(isCreateScale()){
+		map.addControl(new BMap.ScaleControl({anchor: BMAP_ANCHOR_BOTTOM_LEFT}));                   //比例尺 左下
+	}
+	var myDis = new BMapLib.DistanceTool(map);														//测距控件
+	var myDrag = new BMapLib.RectangleZoom(map, {followText: getRectangleZoomText()});						 //拉框放大
+    //var defaultCursor = "url('images/openhand.cur')";
+    //map.addControl(new BMap.OverviewMapControl());              //添加默认鹰眼图控件
+	if(isCreateHawkeye()){
+		map.addControl(new BMap.OverviewMapControl({isOpen:isOpenHawkeye(), anchor: BMAP_ANCHOR_BOTTOM_RIGHT}));   //鹰眼图,右下角，打开
+	}
+	if(isEnableKeyboard){
+		map.enableKeyboard();			//启用键盘操作
+	}
+    //地图样式
+    map.setMapStyle(getMapStyle());
+
+	
+    //定义图片样式
+    var myStyles = [{
+        url: '1.jpg',
+        size: new BMap.Size(30, 30),
+        opt_anchor: [10, 10],
+        textColor: '#ff00ff',
+        opt_textSize: 10
+    },
+    {
+        url: '2.jpg',
+        size: new BMap.Size(40, 40),
+        opt_anchor: [20, 20],
+        textColor: '#ff0000',
+        opt_textSize: 12
+    }];
+	//添加mapZoom变化事件
+	map.addEventListener('zoomend', function(e) {
+		if(currShowLabel){
+			currShowLabel.hidediv();
+		}
+		hideLabelFromZoom();
+	})
+    //重写得到图片样式style
+    BMapLib.TextIconOverlay.prototype.getStyleByText = function(text, styles) {
+        var count = parseInt(Math.random() * 100);
+        var index = parseInt(count % styles.length);
+        index = Math.max(0, index);
+        index = Math.min(index, styles.length - 1);
+        return styles[index];
+    }
+	//开启测距
+	function openDis(){
+		myDis.open();
+	}
+	//关闭测距
+	function closeDis(){
+		myDis.close();
+	}
+	//开启拉框放大
+	function openDrag(){
+		myDrag.open();
+	}
+	//关闭拉框放大
+	function closeDrag(){
+		myDrag.close();
+	}
+	//平移
+	function panning(){
+		closeDis();
+		closeDrag();
+		closePolyLine();
+	}
+	//添加视图书签
+	function addBookMark(value){
+		if(value!=null){
+			if(bkmkMap.get(value)==null){
+				var point = map.getCenter();
+				var zoom = map.getZoom();
+				var bkmk = [zoom,point.lng,point.lat];
+				var idx = bkmkMap.size();
+				var option = new Option(value, value);
+				//调用flex添加书签
+				//if(fn){
+					//fn(zoom,point.lng,point.lat);
+				//}
+				bkmkMap.put(value,bkmk);
+				var slt = document.getElementById("bookmarkselect");
+				if(slt.add){
+					slt.add(option);
+				}else{
+					slt.appendChild(option);
+				}
+			}else{
+				alert("书签名已存在");
+			}
+		}
+	}
+	
+		//隐藏当前显示的div
+	function hideClickContent(){
+		if(currShowLabel){
+			currShowLabel.hidediv();
+		}
+	}
+	//显示之前隐藏的div
+	function showClickContent(){
+		if(currShowLabel){
+			currShowLabel.showdiv();
+		}
+	}
+	
+	//得到地图缩放级别
+	function getZoom(){
+		return map.getZoom();
+	}
+	//得到地图中心点
+	function getCenter(){
+		var ct = map.getCenter();
+		return ct.lng+","+ct.lat;
+	}
+	//定位视图书签
+	function gotoBookMark(){
+		var value = document.getElementById("bookmarkselect").value;
+		var bkmk = bkmkMap.get(value);
+		if(bkmk){
+			if(!(isNaN(bkmk[0])||isNaN(bkmk[1])||isNaN(bkmk[2]))){
+				map.setZoom(bkmk[0]);
+				map.setCenter(new BMap.Point(bkmk[1],bkmk[2]));
+			}
+		}
+	}
+	//重置缩放级别和中心点
+	function resetZoomAndCenter(zoom,lng,lat){
+		map.setZoom(zoom);
+		map.setCenter(new BMap.Point(lng,lat));
+	}
+	//添加Marker标注
+    function addMarker(lng,lat, markerInfo, iconCursor, cursorWidth, cursorHeight) {
+        if (cursorWidth == null) {
+            cursorWidth = 80;
+        }
+        if (cursorHeight == null) {
+            cursorHeight = 80;
+        }
+        var marker;
+        if (iconCursor != null) {
+            var myIcon = new BMap.Icon(iconCursor, new BMap.Size(cursorWidth, cursorHeight));
+            marker = new BMap.Marker(new BMap.Point(lng,lat), {
+                icon: myIcon
+            }); // 创建标注
+        } else {
+            marker = new BMap.Marker(new BMap.Point(lng,lat)); // 创建标注
+        }
+        map.addOverlay(marker); // 将标注添加到地图中
+		if(markerInfo!=null){
+			var infoWindow = new BMap.InfoWindow(markerInfo, {
+            enableMessage: false,
+            offset: new BMap.Size(0, -30)
+			});
+			marker.addEventListener("click",
+			function() {
+				this.openInfoWindow(infoWindow);
+			});
+		}
+        
+    }
+	//修改显示Label显示文本
+	function changeLabelContent(){
+		isComplexShow = !isComplexShow;
+		labelMap.each(function(k,v,i){
+			for(var s=0;s<v.length;s++){
+				var l = v[s];
+				if(isComplexShow){
+					l.showtext();
+				}else{
+					l.showsimpletext();
+				}
+			}
+		});
+	}
+	//添加MarkerInfo详细信息
+    function addMarkInfo(arrayInfo) {
+			addDataMap(arrayInfo[0].split("#"));
+			createSeleteTag();
+    }
+	//将数据本地化
+    function addDataMap(arrayInfo) {
+        dataMap.clear();
+		var dpm = getDataPointMap();
+        for (var i = 0; i < arrayInfo.length; i++) {
+            var arr = arrayInfo[i].split(";");
+            var dataInfos;
+			var id = arr[0];
+			var mapPointData = dpm.get(id);
+			var type = mapPointData.type;
+			if(mapPointData==null){
+				alert(id);
+			}
+            if (dataMap.contain(type)) {
+                dataInfos = dataMap.get(type);
+            } else {
+                dataInfos = new Array();
+            }
+            var dataInfo = {
+				id:id,
+                lng:mapPointData.lng,
+                lat:mapPointData.lat,
+				simpleContent:mapPointData.content,
+                content:getContentByType(mapPointData.content,arr[1],type),
+                clickContent:getClickContentByType(arr[2],type),
+                minZoom:mapPointData.minZoom,
+                maxZoom:mapPointData.maxZoom
+            };
+            dataInfos.push(dataInfo);
+            dataMap.put(mapPointData.type, dataInfos);
+        }
+    }
+	//更新本地数据
+	function updateMarkInfo(arrayInfo){
+		updateDataMap(arrayInfo[0].split("#"));
+		updateLabels();
+	}
+	function updateDataMap(arrayInfo){
+		var dpm = getDataPointMap();
+        for (var i = 0; i < arrayInfo.length; i++) {
+            var arr = arrayInfo[i].split(";");
+            var dataInfos;
+			var id = arr[0];
+			var mapPointData = dpm.get(id);
+			var type = mapPointData.type;
+            if (dataMap.contain(type)) {
+                dataInfos = dataMap.get(type);
+				for(var j=0;j<dataInfos.length;j++){
+					var di = dataInfos[j];
+					if(id==di.id){
+						di.content = getContentByType(mapPointData.content,arr[1],type);
+						di.clickContent = getClickContentByType(arr[2],type);
+						break;
+					}
+					if(j==dataInfos.length-1){
+						var dataInfo = {
+						id:id,
+						lng:mapPointData.lng,
+						lat:mapPointData.lat,
+						simpleContent:mapPointData.content,
+						content:getContentByType(mapPointData.content,arr[1],type),
+						clickContent:getClickContentByType(arr[2],type),
+						minZoom:mapPointData.minZoom,
+						maxZoom:mapPointData.maxZoom
+						};
+						dataInfos.push(dataInfo);
+						break;
+					}
+				}
+            } else {
+                dataInfos = new Array();
+				var dataInfo = {
+				id:id,
+                lng:mapPointData.lng,
+                lat:mapPointData.lat,
+				simpleContent:mapPointData.content,
+                content:getContentByType(mapPointData.content,arr[1],type),
+                clickContent:getClickContentByType(arr[2],type),
+                minZoom:mapPointData.minZoom,
+                maxZoom:mapPointData.maxZoom
+				};
+				dataInfos.push(dataInfo);
+				dataMap.put(mapPointData.type, dataInfos);
+            }
+            
+        }
+	}
+	//更新本地数据
+	function updateLabels(){
+		dataMap.each(function(k,v,i){
+			for(var s=0;s<v.length;s++){
+                var e = v[s];
+				updateLabel(e.id,k,e.lng,e.lat,e.simpleContent,e.content,e.clickContent,e.minZoom,e.maxZoom);
+			}
+        });
+		hideLabelFromZoom();
+	}
+	//根据id显示隐藏HtmlElement
+    function hideElement(id,show){
+        if(show){
+            document.getElementById(id).style.display = "block";
+        }else{
+            document.getElementById(id).style.display = "none";
+        }
+    }
+	//根据type隐藏对应类型Label
+	function hideLabel(btn,type){
+		var labelArray = labelMap.get(type);
+		if(btn.value.indexOf("隐藏")>=0){
+			for(var i =0;i < labelArray.length;i++){
+				var lb = labelArray[i];
+				lb.hide();
+			}
+			btn.value = "显示"+getType(type);
+		}else{
+			for(var i =0;i < labelArray.length;i++){
+				var lb = labelArray[i];
+				lb.show();
+			}
+			btn.value = "隐藏"+getType(type);
+		}
+	}
+	//创建定位下拉框区域
+    function createSeleteTag() {
+        var pcb = document.getElementById("point_checkbox");
+        var pst = document.getElementById("point_selection");
+		var phb = document.getElementById("point_hidebutton");
+		pcb.appendChild(document.createTextNode("定位:"));
+		var br = document.createElement("br");
+		pcb.appendChild(br);
+        dataMap.each(function(k,v,i){
+			var hb = document.createElement("input");
+			hb.type = "button";
+			hb.value = "隐藏"+getType(k);
+            hb.setAttribute("onclick", "hideLabel(this,"+k+")");
+			phb.appendChild(hb);
+            //if(i!=0){
+                var cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.title = getType(k);
+                cb.id = "selectionCk"+k;
+                cb.setAttribute("onclick", "hideElement('selectionSltDiv"+k+"',this.checked)");
+                pcb.appendChild(cb);
+                pcb.appendChild(document.createTextNode(getType(k)));
+				var sltDiv = document.createElement("div");
+				sltDiv.id = "selectionSltDiv"+k;
+				sltDiv.style.display = "none";
+                var slt = document.createElement("select");
+				slt.options[0] = new Option("请选择"+getType(k), "");
+                for(var j =0;j<v.length;j++){
+                    var e = v[j];
+                    slt.options[j+1] = new Option(e.simpleContent, e.lng+","+e.lat);
+                }
+                slt.id = "selectionSlt"+k;
+                slt.size = 1;
+                sltDiv.appendChild(slt);
+                var btn = document.createElement("input");
+				btn.type = "button";
+				btn.value = "定位";
+                btn.setAttribute("onclick", "panToSelect(selectionSlt"+k+")");
+                sltDiv.appendChild(btn);
+                pst.appendChild(sltDiv);
+            //}
+			for(var s=0;s<v.length;s++){
+                var e = v[s];
+				addLabel(e.id,k,e.lng,e.lat,e.simpleContent,e.content,e.clickContent,e.minZoom,e.maxZoom);
+			}
+        });
+		hideLabelFromZoom();
+    }
+	//创建河道信息
+	function createDrawDataPoint(){
+		var dp = getDrawDataPoints();
+		if(dp!=null){
+			for(var i=0;i<dp.length;i++){
+				var d = dp[i];
+				addDrawDatapoint(d);
+			}
+		}
+	}
+	//添加一个河道Label
+	function addDrawDatapoint(d){
+		var type = 0;
+		var scxnLabel = new ScxnLabel(new BMap.Point(d.lng, d.lat),d.content, d.content, getDrawLabelContentStyle(d.styleId)+"font-size:"+d.fontSize,d.minZoom,d.maxZoom);
+		map.addOverlay(scxnLabel);
+		if(labelMap.get(type)==null){
+			var labelArray = new Array();
+			labelArray.push(scxnLabel);
+			labelMap.put(type,labelArray);
+		}else{
+			var labelArray = labelMap.get(type);
+			labelArray.push(scxnLabel);
+			labelMap.put(type,labelArray);
+		}
+		function scxnLabelMouseover(){
+			var innerHTML = getStreamClickDiv(d.value);
+		
+			scxnLabel.showdiv(innerHTML);
+		}
+		function scxnLabelMouseout(){
+			scxnLabel.hidediv();
+		}
+		scxnLabel.addEventListener("mouseover",scxnLabelMouseover);
+		scxnLabel.addEventListener("mouseout",scxnLabelMouseout);
+	}
+    //添加Label
+    function addLabel(id,type,lng,lat,simpleContent,content,clickContent,minZoom,maxZoom) {
+		var url = getImageById(id);
+		var ct;
+		var sct;
+		if(url){
+			ct = "<img   src='"+url+"'/>"+content;
+			sct = "<img    src='"+url+"'/>"+simpleContent;
+		}else{
+			ct = content;
+			sct = simpleContent;
+		}
+		var scxnLabel = new ScxnLabel(new BMap.Point(lng, lat),sct, ct, getLabelContentStyle(),minZoom,maxZoom);
+        map.addOverlay(scxnLabel);
+		if(labelMap.get(type)==null){
+			var labelArray = new Array();
+			labelArray.push(scxnLabel);
+			labelMap.put(type,labelArray);
+		}else{
+			var labelArray = labelMap.get(type);
+			labelArray.push(scxnLabel);
+			labelMap.put(type,labelArray);
+		}
+		if(clickContent !=null && clickContent !=""){
+	
+			//var div = document.createElement("div");
+			//div.innerHTML = clickContent;
+			var mapPointData = getDataPointMap().get(id);
+			var icon = mapPointData.icon;
+			var title = mapPointData.title;
+			var image = mapPointData.image;
+			var content = clickContent;
+			var tabarr = mapPointData.tabbars;
+//			var flashparam = function(id,tab,startDate,endDate){
+//				return callFlex("flexChart","findFlexChar",tab.dataIds+";"+startDate+";"+endDate);
+//				if(tab.name==tabarr[0].name){
+//					return "开都河流量;"+startDate+";"+endDate+";雨量/米,总雨量/毫米;雨量,总雨量;con,line;1day,10,10; 2day,15,25; 3day,15,40; 4day,20,60";
+//				}else if(tab.name==tabarr[1].name){
+//					return "开都河流量;"+startDate+";"+endDate+";雨量/米,总雨量/毫米;雨量,总雨量;con,line;1day,10,10; 2day,15,25; 3day,15,40; 4day,20,60";
+//				}else if(tab.name==tabarr[2].name){
+//					return "开都河流量;"+startDate+";"+endDate+";雨量/米,总雨量/毫米;雨量,总雨量;con,line;1day,10,10; 2day,15,25; 3day,15,40; 4day,20,60";
+//				}
+//				return "开都河流量;"+startDate+";"+endDate+";雨量/米,总雨量/毫米;雨量,总雨量;con,line;1day,10,10; 2day,15,25; 3day,15,40; 4day,20,60";
+//			}
+			function scxnLabelClick(){
+				var innerHTML = getScxnLabelClickDiv(id,icon,title,image,content,tabarr,flashparam);
+				if(currShowLabel){
+					currShowLabel.hidediv();
+				}
+				currShowLabel = scxnLabel;
+				scxnLabel.showdiv(innerHTML);
+			}
+			scxnLabel.addEventListener("click",scxnLabelClick);
+		}
+		if(!isComplexShow){
+			scxnLabel.showsimpletext();
+		}
+		
+	}
+	//查询flex参数
+	function flashparam(tab,startDate,endDate){
+		function callparentflaex(id,call,param)
+		{
+			var isflex=window.parent.document.getElementById(id);
+			if(call in isflex)
+			{
+				if(param == null)
+				{
+					return isflex[call]();
+				}else
+				   return isflex[call](param);
+			}
+			
+		}
+		var temp=callparentflaex("wsas","findFlexChart",tab.dataIds+";"+startDate+";"+endDate);
+		return temp;
+		//return MyFlexApp.findFlexChart(tab.dataIds+";"+startDate+";"+endDate);
+	}
+	 //更新Label
+    function updateLabel(id,type,lng,lat,simpleContent,content,clickContent,minZoom,maxZoom) {
+		var url = getImageById(id);
+		var ct;
+		var sct;
+		if(url){
+					ct = "<img   src='"+url+"'/>"+content;
+			sct = "<img  src='"+url+"'/>"+simpleContent;
+		}else{
+			ct = content;
+			sct = simpleContent;
+		}
+		var scxnLabel = new ScxnLabel(new BMap.Point(lng, lat),sct, ct, getLabelContentStyle(),minZoom,maxZoom);
+		if(labelMap.get(type)==null){
+			var labelArray = new Array();
+			map.addOverlay(scxnLabel);
+			labelArray.push(scxnLabel);
+			labelMap.put(type,labelArray);
+		}else{
+			var labelArray = labelMap.get(type);
+			for(var i=0;i<labelArray.length;i++){
+				var p = new BMap.Point(lng, lat);
+				if(labelArray[i].equals(p,minZoom,maxZoom)){
+					labelArray[i].update(sct,ct);
+					scxnLabel = labelArray[i];
+					break;
+				}
+				if(i==labelArray.length-1){
+					map.addOverlay(scxnLabel);
+					labelArray.push(scxnLabel);
+					labelMap.put(type,labelArray);
+					break;
+				}
+			}
+			//labelArray.push(scxnLabel);
+			//labelMap.put(type,labelArray);
+		}
+		if(clickContent){
+			//var div = document.createElement("div");
+			//div.innerHTML = clickContent;
+			var mapPointData = getDataPointMap().get(id);
+			var icon = mapPointData.icon;
+			var title = mapPointData.title;
+			var image = mapPointData.image;
+			var content = clickContent;
+			var tabarr = mapPointData.tabbars;
+//			var flashparam = function(id,tab){
+//				if(tab.name==tabarr[0].name){
+//					return "流量;2013-12-11;2013-12-20;流量/米,总雨量/毫米;雨量,总雨量;con,line;1r,10,10;2r,15,25;3r,15,30;4r,40,40";
+//				}else if(tab.name==tabarr[1].name){
+//					return "流量;2013-12-11;2013-12-20;流量/米,总雨量/毫米;雨量,总雨量;con,line;1r,10,10;2r,15,25;3r,15,30;4r,40,40";
+//				}else if(tab.name==tabarr[2].name){
+//					return "流量;2013-12-11;2013-12-20;流量/米,总雨量/毫米;雨量,总雨量;con,line;1r,10,10;2r,15,25;3r,15,30;4r,40,40";
+//				}
+//				return "流量;2013-12-11;2013-12-20;流量/米,总雨量/毫米;雨量,总雨量;con,line;1r,10,10;2r,15,25;3r,15,30;4r,40,40";
+//			}
+			function scxnLabelClick(){
+				var innerHTML = getScxnLabelClickDiv(id,icon,title,image,content,tabarr,flashparam);
+				if(currShowLabel){
+					currShowLabel.hidediv();
+				}
+				currShowLabel = scxnLabel;
+				scxnLabel.showdiv(innerHTML);
+			}
+			scxnLabel.addEventListener("click",scxnLabelClick);
+		}
+		if(isComplexShow){
+			scxnLabel.showtext();
+		}else{
+			scxnLabel.showsimpletext();
+		}
+		
+	}
+	//隐藏Label通过zoom
+	function hideLabelFromZoom(){
+		//k=type;v=label数据数组
+		var zoom = map.getZoom();
+		labelMap.each(function(k,v,i){
+			for(var s=0;s<v.length;s++){
+                var l = v[s];
+				if(zoom>l.maxZoom||zoom<l.minZoom){
+					l.hide();
+				}else{
+					l.show();
+				}
+			}
+		});
+	}
+	//跳转到对应的point
+  function panTo(lng, lat) {
+        if (x==null || x == "") {
+            alert("x坐标为空");
+        } else if (y==null || y == "") {
+            alert("y坐标为空");
+        } else {
+            map.panTo(new BMap.Point(lng, lat));
+        }
+    }
+	//定位到指定站点
+	function panToZoom(lng,lat){
+		var pt = new BMap.Point(lng, lat);
+		var z = map.getZoom();
+		dataMap.each(function(k,v,i){
+			for(var s=0;s<v.length;s++){
+                var e = v[s];
+				if(e.lng==lng&&e.lat==lat){
+					if(z<e.minZoom){
+						z = e.minZoom;
+					}else if(z>e.maxZoom){
+						z = e.maxZoom;
+					}
+					break;
+				}
+			}
+        });
+		map.centerAndZoom(pt, z);
+	}
+	//根据select标签id跳转对应point
+    function panToSelect(selectTag) {
+        var point = selectTag.value;
+		if(point&&point!=""&&point.indexOf(",")>0){
+			panTo(point.split(",")[0], point.split(",")[1]);
+		}
+    }
+	//初始化到中心点
+    function initCenterAndZoom() {
+		map.centerAndZoom(getInitPoint(), getInitZoom());
+    }
+	//设置地图类型
+	function setMapType(type){
+		var t = BMAP_NORMAL_MAP;
+		if(type==0){
+			t = BMAP_NORMAL_MAP;
+		}else if(type==1){
+			t = BMAP_HYBRID_MAP;
+		}
+	}
+	//添加地图覆盖层
+	function addPolygon(points,lineOpacity,lineColor,fillOpacity,fillColor,strokeWeight){
+		return mapAddPolygon(map,points,lineOpacity,lineColor,fillOpacity,fillColor,strokeWeight);
+	}
+	//添加地图覆盖线
+	function addPolyline(points,lineColor,lineOpacity,strokeWeight){
+		return mapAddPolyline(map,points,lineColor,lineOpacity,strokeWeight);
+	}
+//固定地图
+	function disableDragging(){
+		isFixedMap=!isFixedMap;
+		if(isFixedMap){
+			map.disableDragging();
+		}else{
+			map.enableDragging();
+		}
+	}
+	//取消固定地图
+	function enableDragging(){
+		map.enableDragging();
+	}
+	//打印地图
+	function printMap(){
+			var bdhtml=window.document.body.innerHTML;//获取当前页的html代码  
+			sprnstr="<!--startprint-->";//设置打印开始区域  
+			eprnstr="<!--endprint-->";//设置打印结束区域  
+			var prnhtml=bdhtml.substring(bdhtml.indexOf(sprnstr)+18); //从开始代码向后取html  
+			  
+			prnhtml=prnhtml.substring(0,prnhtml.indexOf(eprnstr));//从结束代码向前取html  
+			//document.getElementById("info_div").innerHTML += prnhtml;
+			//alert(prnhtml);
+			var openWindow = window.open("");  
+			openWindow.document.write("<HTML>"); 
+			openWindow.document.write("<HEAD>"); 
+			openWindow.document.write("<meta http-equiv=\"Content-Type\" content=\"text\/html; charset=gbk\" \/>"); 
+			openWindow.document.write("<TITLE>地图打印<\/TITLE>"); 
+			//得到地图大小
+			var h = document.getElementById("allmap").offsetHeight;
+			var w = document.getElementById("allmap").offsetWidth;
+			// 这里写你的CSS地址 
+			openWindow.document.write("<link rel=\"stylesheet\" type=\"text/css\" href=\"css/baidu.css\">"); 
+			openWindow.document.write("<link rel=\"stylesheet\" type=\"text/css\" href=\"css/scxnTabDiv.css\">"); 
+			openWindow.document.write("<\/HEAD>"); 
+			openWindow.document.write("<BODY style=\"width:"+w+"px;height:"+h+"px;\">"); 
+			openWindow.document.write("<\/>"); 
+			openWindow.document.write("<\/BODY>"); 
+			openWindow.document.write("<\/HTML>"); 
+			openWindow.document.body.innerHTML=prnhtml;
+			openWindow.print();  
+	}
+	//初始化地图
+    function initMap() {
+        //var label = new BMap.Label("这里是成都",los);
+        //map.addOverlay(label);
+        //label.setPosition(new BMap.Point(84.398,42.5476));
+		//BMapLib.AreaRestriction.setBounds(map, map.getBounds());
+		defaultCursor = map.getDefaultCursor();
+		var drawpoints = getDrawPoints();
+		if(drawpoints){
+			mapAddPolygons(map,drawpoints,0.01,getDrawColor(),1.0,getDrawColor());
+		}
+		createDrawDataPoint();
+		getBoundary(map,"#ff0000","#E6f0F0",0.6,initCenterAndZoom,5);
+		setTimeout(function(){
+			map.setMinZoom(getMinZoom());
+			map.setMaxZoom(getMaxZoom());
+		}, 2000);
+		addMarkInfo(getTestArrayInfo());
+		showToolPanel();
+    }
+	
+	//得到测试数据
+	function testUpdate(){
+		updateMarkInfo(getTestUpdateArrayInfo());
+	}
+	var data_count = 18;
+	function getTestArrayInfo(){
+		var arrayInfo = "";
+		var clickContent = "111@111@111@111,222@222@222@222,111@111@222@333";
+		for(var i =0;i<data_count;i++){
+			var data = i+';3'+i+';'+clickContent;
+			if(i!=data_count-1){
+				data+="#";
+			}
+			arrayInfo+=data;
+		}
+		var array = new Array();
+		array[0] = arrayInfo;
+		return array;
+	}
+	function getTestUpdateArrayInfo(){
+		var arrayInfo = "";
+		var clickContent = "123@123@123@123,456@456@456@456,798@123@456@789";
+		for(var i =0;i<data_count;i++){
+			var data = i+';5'+i+'ml;'+clickContent;
+			if(i!=data_count-1){
+				data+="#";
+			}
+			arrayInfo+=data;
+		}
+		var array = new Array();
+		array[0] = arrayInfo;
+		return array;
+	}
+	//显示工具栏
+	 function showToolPanel(){
+            isPanelShow = !isPanelShow;
+        if (isPanelShow == false) {
+            document.getElementById("allmap").style.marginRight = "10px";
+            document.getElementById("map_hidetools").style.right = "0px";
+            document.getElementById("map_tools").style.display = "none";
+            document.getElementById("map_hidetools").innerHTML = "<";
+        } else {
+            document.getElementById("allmap").style.marginRight = "240px";
+            document.getElementById("map_hidetools").style.right = "230px";
+            document.getElementById("map_tools").style.display = "block";
+            document.getElementById("map_hidetools").innerHTML = ">";
+        }
+    }
+	//初始化地图站点信息
+	function initMapData(){
+		
+	}
+    //初始化地图
+    initMap();
+    document.getElementById("loading_div").style.display = "none";
+	function testcallFlex(flag){
+		alert("得到参数:"+flag);
+	}
+</script>
